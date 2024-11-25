@@ -1,17 +1,18 @@
 from .constants import JOYCON_VENDOR_ID, JOYCON_PRODUCT_IDS
-from .constants import JOYCON_L_PRODUCT_ID, JOYCON_R_PRODUCT_ID
+from .constants import JOYCON_L_PRODUCT_ID, JOYCON_R_PRODUCT_ID, JOYCON_IR_POINTING, JOYCON_IR_CLUSTERING
 import hid
 import time
 import threading
+import struct
 from typing import Optional
 
 # TODO: disconnect, power off sequence
 
-
 class JoyCon:
-    _INPUT_REPORT_SIZE = 49
+    _INPUT_REPORT_SIZE = 359 # 200 # 49
     _INPUT_REPORT_PERIOD = 0.015
     _RUMBLE_DATA = b'\x00\x01\x40\x40\x00\x01\x40\x40'
+    #_RUMBLE_DATA = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
     vendor_id  : int
     product_id : int
@@ -20,13 +21,14 @@ class JoyCon:
     color_body : (int, int, int)
     color_btn  : (int, int, int)
 
-    def __init__(self, vendor_id: int, product_id: int, serial: str = None, simple_mode=False):
+    def __init__(self, vendor_id: int, product_id: int, serial: str = None, simple_mode=False, ir_mode=None):
         if vendor_id != JOYCON_VENDOR_ID:
             raise ValueError(f'vendor_id is invalid: {vendor_id!r}')
 
         if product_id not in JOYCON_PRODUCT_IDS:
             raise ValueError(f'product_id is invalid: {product_id!r}')
 
+        self.ir_mode     = ir_mode
         self.vendor_id   = vendor_id
         self.product_id  = product_id
         self.serial      = serial
@@ -49,6 +51,67 @@ class JoyCon:
             = threading.Thread(target=self._update_input_report)
         self._update_input_report_thread.setDaemon(True)
         self._update_input_report_thread.start()
+        
+    def show(self, data, direction):
+        print(direction + (' '.join(('%02x'%datum for datum in data))))
+       
+    def _request_ir_report(self):
+        self._write_output_report(b'\x11', b'\x03', b'\x00'+(b'\x00'*36)+b'\xFF', crcLocation=47, crcStart=11, crcLength=36)            
+        
+    def _send_ir_mode(self, retries=16):
+        reportType = 0x31
+        # set report type
+        if not self._write_output_report(b'\x01', b'\x03', bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3))): # TODO: report type?
+            print("set report type failed")
+            return False
+        # init mcu
+        if not self._write_output_report(b'\x01', b'\x22', b'\x01', confirm=((0xD,0x80),(0xE,0x22))):
+            print("init mcu failed")
+            return False
+        # get status
+        if not self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x01))):
+            print("get status failed")
+            return False
+        if not self._write_output_report(b'\x01', b'\x21', b'\x01\x00\x05', crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21), (15,0x01), (22, 0x01))):
+            print("set mcu mode failed")
+            return False
+        if not self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x05))):
+            print("get status failed")
+            return False
+        args = struct.pack('<BBBBHH', 0x23, 0x01, self.ir_mode, 1, 0x0500, 0x1800)
+        if not self._write_output_report(b'\x01', b'\x21', args, crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21),(15,0x0b))):
+            print("set ir mode failed")
+            return False
+        if not self._write_output_report(b'\x11', b'\x03', b'\x02'+(b'\x00'*36)+b'\xFF', crcLocation=47, crcStart=11, crcLength=36, 
+            confirm=((0,0x21),(15,0x13),(16,0),(17,0x02 if self.ir_mode == 0x04 else self.ir_mode))):
+            print("set ir confirm failed")
+            return False
+        print("ir mode set up")
+        # todo: investigate
+        leds = 0b110000 # all off
+        intensity12 = 0x0 # max 0xF
+        intensity34 = 0x0 # max 0x10
+        externalFilter = 0 # or 3
+        self._set_mcu_registers( (0x1000,leds),(0x1100,intensity12),(0x12,intensity34),(0x0e00,externalFilter),(0x2e00,0b00000000),(0x400,0x32),(0x700,0x01) )
+#        if not self._write_output_report(b'\x11', b'\x03', b'\x02'+(b'\x00'*36)+b'\xFF', crcLocation=47, crcStart=11, crcLength=36, 
+#            confirm=((0,0x21),(15,0x13),(16,0),(17,0x02 if self.ir_mode == 0x04 else self.ir_mode))):
+#            print("set ir confirm failed")
+#            return False
+        self._request_ir_report()
+        
+        return True
+
+    def _set_mcu_registers(self, *registers):
+        print("registers")
+        count = len(registers)
+        if count > 9:
+            return False
+        cmd = bytes((0x23,0x04,count,))
+        for reg,value in registers:
+            cmd += struct.pack('<HB', reg, value)
+        if count < 9:
+            cmd += bytes((0,0,0)) * (9-count)
+        self._write_output_report(b'\x01', b'\x21', cmd, crcLocation=48, crcStart=12, crcLength=36)
 
     def _open(self, vendor_id, product_id, serial):
         try:
@@ -69,18 +132,84 @@ class JoyCon:
             del self._joycon_device
 
     def _read_input_report(self) -> bytes:
-        return bytes(self._joycon_device.read(self._INPUT_REPORT_SIZE))
+        out = bytes(self._joycon_device.read(self._INPUT_REPORT_SIZE))
+        #self.show(out, '<  ')
+        return out
+        
+    crc8_table = [
+        0x00, 0x07, 0x0E, 0x09, 0x1C, 0x1B, 0x12, 0x15, 0x38, 0x3F, 0x36, 0x31, 0x24, 0x23, 0x2A, 0x2D,
+        0x70, 0x77, 0x7E, 0x79, 0x6C, 0x6B, 0x62, 0x65, 0x48, 0x4F, 0x46, 0x41, 0x54, 0x53, 0x5A, 0x5D,
+        0xE0, 0xE7, 0xEE, 0xE9, 0xFC, 0xFB, 0xF2, 0xF5, 0xD8, 0xDF, 0xD6, 0xD1, 0xC4, 0xC3, 0xCA, 0xCD,
+        0x90, 0x97, 0x9E, 0x99, 0x8C, 0x8B, 0x82, 0x85, 0xA8, 0xAF, 0xA6, 0xA1, 0xB4, 0xB3, 0xBA, 0xBD,
+        0xC7, 0xC0, 0xC9, 0xCE, 0xDB, 0xDC, 0xD5, 0xD2, 0xFF, 0xF8, 0xF1, 0xF6, 0xE3, 0xE4, 0xED, 0xEA,
+        0xB7, 0xB0, 0xB9, 0xBE, 0xAB, 0xAC, 0xA5, 0xA2, 0x8F, 0x88, 0x81, 0x86, 0x93, 0x94, 0x9D, 0x9A,
+        0x27, 0x20, 0x29, 0x2E, 0x3B, 0x3C, 0x35, 0x32, 0x1F, 0x18, 0x11, 0x16, 0x03, 0x04, 0x0D, 0x0A,
+        0x57, 0x50, 0x59, 0x5E, 0x4B, 0x4C, 0x45, 0x42, 0x6F, 0x68, 0x61, 0x66, 0x73, 0x74, 0x7D, 0x7A,
+        0x89, 0x8E, 0x87, 0x80, 0x95, 0x92, 0x9B, 0x9C, 0xB1, 0xB6, 0xBF, 0xB8, 0xAD, 0xAA, 0xA3, 0xA4,
+        0xF9, 0xFE, 0xF7, 0xF0, 0xE5, 0xE2, 0xEB, 0xEC, 0xC1, 0xC6, 0xCF, 0xC8, 0xDD, 0xDA, 0xD3, 0xD4,
+        0x69, 0x6E, 0x67, 0x60, 0x75, 0x72, 0x7B, 0x7C, 0x51, 0x56, 0x5F, 0x58, 0x4D, 0x4A, 0x43, 0x44,
+        0x19, 0x1E, 0x17, 0x10, 0x05, 0x02, 0x0B, 0x0C, 0x21, 0x26, 0x2F, 0x28, 0x3D, 0x3A, 0x33, 0x34,
+        0x4E, 0x49, 0x40, 0x47, 0x52, 0x55, 0x5C, 0x5B, 0x76, 0x71, 0x78, 0x7F, 0x6A, 0x6D, 0x64, 0x63,
+        0x3E, 0x39, 0x30, 0x37, 0x22, 0x25, 0x2C, 0x2B, 0x06, 0x01, 0x08, 0x0F, 0x1A, 0x1D, 0x14, 0x13,
+        0xAE, 0xA9, 0xA0, 0xA7, 0xB2, 0xB5, 0xBC, 0xBB, 0x96, 0x91, 0x98, 0x9F, 0x8A, 0x8D, 0x84, 0x83,
+        0xDE, 0xD9, 0xD0, 0xD7, 0xC2, 0xC5, 0xCC, 0xCB, 0xE6, 0xE1, 0xE8, 0xEF, 0xFA, 0xFD, 0xF4, 0xF3
+    ]
+        
+    def _crc8(self, data, start, length):
+        crc8 = 0
+        for i in range(length):
+            crc8 = JoyCon.crc8_table[crc8^(0xFF & data[start+i])]
+        return crc8
 
-    def _write_output_report(self, command, subcommand, argument):
-        # TODO: add documentation
-        self._joycon_device.write(b''.join([
-            command,
-            self._packet_number.to_bytes(1, byteorder='little'),
-            self._RUMBLE_DATA,
-            subcommand,
-            argument,
-        ]))
-        self._packet_number = (self._packet_number + 1) & 0xF
+    def _write_output_report(self, command, subcommand, argument, crcLocation=None, crcStart=None, crcLength=None, confirm=None, confirmRetries=16):
+        r = confirmRetries
+        while r > 0:
+            # TODO: add documentation
+            data = b''.join([
+                command,
+                self._packet_number.to_bytes(1, byteorder='little'),
+                self._RUMBLE_DATA,
+                subcommand,
+                argument,
+            ])
+            if crcLocation is not None:
+#                if len(data) > crcLocation:
+#                    data = data[:crcLocation]
+                if len(data) < crcLocation:
+                    data += bytes((0,)) * (crcLocation - len(data))
+                data = data[:crcLocation] + self._crc8(data, crcStart, crcLength).to_bytes(1) + data[crcLocation+1:]
+                
+            if len(data)>49:
+                data = data[:49]
+            elif len(data)<49:
+                data += bytes((0,))*(49-len(data))
+            #self.show(data, '>  ')
+
+            self._joycon_device.write(data)
+            self._packet_number = (self._packet_number + 1) & 0xF
+            
+            if confirm is None:
+                return True
+                
+            r2 = confirmRetries
+            while r2 > 0:
+                report = self._read_input_report()
+                haveRightReportType = False
+                for pos,value in confirm:
+                    if pos == 0 and len(report) >= 1 and report[0] == value:
+                        haveRightReportType = True
+                    elif len(report)<=pos or report[pos] != value:
+                        break
+                else:
+                    return True
+                    
+                if haveRightReportType:
+                    r2 = 0
+                else:
+                    r2 -= 1
+                
+            r -= 1
+        return False
 
     def _send_subcmd_get_response(self, subcommand, argument) -> (bool, bytes):
         # TODO: handle subcmd when daemon is running
@@ -114,11 +243,15 @@ class JoyCon:
         while True:
             report = self._read_input_report()
             # TODO, handle input reports of type 0x21 and 0x3f
-            while report[0] != 0x30:
+            while report[0] != 0x30 and report[0] != 0x31:
                 report = self._read_input_report()
 
             self._input_report = report
-
+            if report[0] == 0x31 and self.ir_mode is not None:
+                self._request_ir_report()
+                
+            #3self.show(report, "<")
+            
             for callback in self._input_hooks:
                 callback(self)
 
@@ -168,8 +301,14 @@ class JoyCon:
         self._write_output_report(b'\x01', b'\x40', b'\x01')
         # It needs delta time to update the setting
         time.sleep(0.02)
-        # Change format of input report
-        self._write_output_report(b'\x01', b'\x03', b'\x30')
+
+        if self.ir_mode is None:
+            # Change format of input report
+            self._write_output_report(b'\x01', b'\x03', b'\x30')
+        else: 
+            self._send_ir_mode()
+            
+        time.sleep(0.02)
 
     @staticmethod
     def _to_int16le_from_2bytes(hbytebe, lbytebe):
@@ -354,6 +493,21 @@ class JoyCon:
             self._input_report[23 + sample_idx * 12],
             self._input_report[24 + sample_idx * 12])
         return (data - self._GYRO_OFFSET_Z) * self._GYRO_COEFF_Z
+        
+    def get_ir_cluster(self, data):
+        brightness,pixels,cm_x_64,cm_y_64,x_start,x_end,y_start,y_end = struct.unpack("<HHHHHHHH", data)
+        return { "brightness": brightness, "pixels": pixels, "cm_x_64": cm_x_64, "cm_y_64": cm_y_64, "x_start": x_start,
+            "x_end": x_end, "y_start": y_start, "y_end": y_end }
+        
+    def get_ir_clusters(self):
+        clusters = []
+        i = 61
+        if self.ir_mode is not None and self._input_report[0] == 0x31 and self._input_report[49] == 0x03 and self._input_report[51] == self.ir_mode:
+            while i + 16 < 59+300:
+                if self._input_report[i] != 0 or self._input_report[i+1] !=0:
+                    clusters.append(self.get_ir_cluster(self._input_report[i:i+16]))
+                i += 16
+        return clusters
 
     def get_status(self) -> dict:
         return {
@@ -412,6 +566,8 @@ class JoyCon:
                 "y": self.get_gyro_y(),
                 "z": self.get_gyro_z(),
             },
+            "ir_clusters": 
+                self.get_ir_clusters()
         }
 
     def set_player_lamp_on(self, on_pattern: int):
