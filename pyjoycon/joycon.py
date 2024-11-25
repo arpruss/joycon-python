@@ -9,7 +9,7 @@ from typing import Optional
 # TODO: disconnect, power off sequence
 
 class JoyCon:
-    _INPUT_REPORT_SIZE = 359 # 200 # 49
+    _INPUT_REPORT_SIZE = 360
     _INPUT_REPORT_PERIOD = 0.015
     _RUMBLE_DATA = b'\x00\x01\x40\x40\x00\x01\x40\x40'
     #_RUMBLE_DATA = b'\x00\x00\x00\x00\x00\x00\x00\x00'
@@ -501,9 +501,11 @@ class JoyCon:
         
     def get_ir_clusters(self):
         clusters = []
-        i = 61
         if self.ir_mode is not None and self._input_report[0] == 0x31 and self._input_report[49] == 0x03 and self._input_report[51] == self.ir_mode:
-            while i + 16 < 59+300:
+            self.show(self._input_report,":")
+            while i + 16 <= 59+300:
+                if self.ir_mode == JOYCON_IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
+                    i += 1
                 if self._input_report[i] != 0 or self._input_report[i+1] !=0:
                     clusters.append(self.get_ir_cluster(self._input_report[i:i+16]))
                 i += 16
