@@ -66,11 +66,24 @@ class JoyCon:
         # 0b01 flashlight
         # 0b10000000 strobe
         # 0b110000 both off
+        pointingThreshold = 0 # 0-7
         leds = 0b110000 # 0b110000 #| 0b01 # all off
         intensity12 = 0x2 # max 0xF
         intensity34 = 0x3 # max 0x10
         externalFilter = 0 # or 3
-        registers = ((0x00,0x10,leds),(0x00,0x11,intensity12),(0x00,0x12,intensity34),(0x00,0x0e,externalFilter),(0x00,0x2e,0b00000000),(0x00,0x04,0x32),(0x01,0x43,200),(0,7,1))
+        enableDenoise = 0
+        maxExposure = 0
+        digitalGain = 0xFF
+        pixelThreshold = 50
+        exposureTime_microseconds = 600
+        exposureTimeValue = 31200 * exposureTime_microseconds // 1000
+        if exposureTimeValue >= 0xFFFF:
+            exposureTimeValue = 0xFFFF
+        
+        registers1 = ((0x01,0x32,maxExposure),(0x01,0x2e,(digitalGain & 0xF)<<4), (0x01,0x2f,(digitalGain & 0xF0)>>4), 
+                      (0x01,0x43,pixelThreshold), (0x01, 0x30, exposureTimeValue & 0xFF ), 
+                      (0x01, 0x31, exposureTimeValue >> 8 ), (0x01,0x67,enableDenoise))
+        registers2 = ((0x01,0x21,pointingThreshold),(0x00,0x10,leds),(0x00,0x11,intensity12),(0x00,0x12,intensity34),(0x00,0x0e,externalFilter),(0x00,0x2e,0b00000000),(0x00,0x04,0x32),(0x01,0x43,200),(0,7,1))
         reportType = 0x31
         # set report type
         if not self._write_output_report(b'\x01', b'\x03', bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3))): # TODO: report type?
@@ -99,7 +112,8 @@ class JoyCon:
             print("set ir mode failed")
             return False
 
-        self._set_mcu_registers(registers)
+        self._set_mcu_registers(registers1)
+        self._set_mcu_registers(registers2)
         self._request_ir_report()
 
         for retries in range(500):
