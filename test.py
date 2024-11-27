@@ -1,8 +1,8 @@
 from time import sleep,time
-import pyjoycon
+from pyjoycon import Joycon,get_R_id
 
-joycon_id = pyjoycon.get_R_id()
-joycon = pyjoycon.JoyCon(*joycon_id, ir_mode=pyjoycon.JOYCON_IR_POINTING)
+joycon_id = get_R_id()
+joycon = pyjoycon.JoyCon(*joycon_id, ir_mode=Joycon.IR_POINTING)
 
 start = time()
 count = 0

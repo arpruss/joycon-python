@@ -2,6 +2,7 @@ from .joycon import JoyCon
 from .wrappers import PythonicJoyCon  # as JoyCon
 from .gyro import GyroTrackingJoyCon
 from .event import ButtonEventJoyCon
+from .ir import IRRegistersJoyCon
 from .device import get_device_ids, get_ids_of_type
 from .device import is_id_L
 from .device import get_R_ids, get_L_ids
@@ -22,6 +23,7 @@ __all__ = [
     "get_device_ids",
     "get_ids_of_type",
     "is_id_L",
-    "JOYCON_IR_CLUSTERING", 
-    "JOYCON_IR_POINTING"
+    "IR_CLUSTERING", 
+    "IR_POINTING",
+    "IRRegistersJoyCon"
 ]

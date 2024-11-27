@@ -1,5 +1,5 @@
 from .constants import JOYCON_VENDOR_ID, JOYCON_PRODUCT_IDS
-from .constants import JOYCON_L_PRODUCT_ID, JOYCON_R_PRODUCT_ID, JOYCON_IR_POINTING, JOYCON_IR_CLUSTERING
+from .constants import JOYCON_L_PRODUCT_ID, JOYCON_R_PRODUCT_ID
 import hid
 import time
 import threading
@@ -11,6 +11,9 @@ from typing import Optional
 class JoyCon:
     _INPUT_REPORT_SIZE = 360
     _INPUT_REPORT_PERIOD = 0.015
+    IR_POINTING   = 4
+    IR_CLUSTERING = 6
+    
     _RUMBLE_DATA = b'\x00\x01\x40\x40\x00\x01\x40\x40'
     #_RUMBLE_DATA = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
@@ -547,7 +550,7 @@ class JoyCon:
         if self._have_ir_data(self._input_report):
             i = 61
             while i + 16 <= 59+300:
-                if self.ir_mode == JOYCON_IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
+                if self.ir_mode == IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
                     i += 1
                 if self._input_report[i] != 0 or self._input_report[i+1] !=0:
                     clusters.append(self.get_ir_cluster(self._input_report[i:i+16]))
