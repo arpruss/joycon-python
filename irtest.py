@@ -25,6 +25,7 @@ def update(j):
         b = cluster.brightness * 255 // 65535
         r = cluster.start[0],cluster.start[1],cluster.end[0]-cluster.start[0]+1,cluster.end[1]-cluster.start[1]+1
         pygame.draw.rect(screen, (b,b,b), pygame.Rect(*r))
+        screen.set_at((int(cluster.cm[0]+0.5),int(cluster.cm[1]+0.5)),(255,0,0))
     pygame.display.flip()
     if count % 30 == 0:
         print(count/(time()-start))
