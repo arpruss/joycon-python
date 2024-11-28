@@ -8,6 +8,7 @@ mode = JoyCon.IR_POINTING
 joycon_id = get_R_id()
 r = IRRegisters()
 r.defaults(mode)
+r.resolution = 40
 if mode == JoyCon.IR_POINTING:
     r.pointingThreshold = 0
 joycon = JoyCon(*joycon_id, ir_mode=mode, ir_registers=r)

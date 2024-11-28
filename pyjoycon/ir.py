@@ -23,7 +23,7 @@ class IRRegisters:
         
     def defaults(self, mode):
         if mode == joycon.JoyCon.IR_CLUSTERING:
-            self.resolution=0
+            self.resolution=320
             self.exposure=200
             self.maxExposure=0
             self.leds=16
@@ -39,7 +39,7 @@ class IRRegisters:
             self.updateTime=50
             self.pointingThreshold=0
         else:
-            self.resolution=0
+            self.resolution=320
             self.exposure=200
             self.maxExposure=0
             self.leds=0
@@ -58,7 +58,17 @@ class IRRegisters:
     def read(self, j):
         page0 = j._get_mcu_registers(0x00)
         page1 = j._get_mcu_registers(0x01)
-        self.resolution = page0[0x2e]
+        r = page0[0x2e]
+        if r == 0b00000000:
+            self.resolution = 320
+        elif r == 0b01010000:
+            self.resolution = 160
+        elif r == 0b01100100:
+            self.resolution = 80
+        elif r == 0b01101001:
+            self.resolution = 40
+        else:
+            self.resolution = -(r & 0xFF)
         e = (page1[0x30] & 0xFF) | ((page1[0x31] & 0xFF)<<8)
         self.exposure = (e * 1000 + 31200//2) // 31200
         self.maxExposure = page1[0x32]
@@ -78,7 +88,17 @@ class IRRegisters:
     def write(self, j):
         data = []
         if self.resolution is not None:
-            data.append((0x00,0x2e,self.resolution))
+            if self.resolution == 320:
+                r = 0b00000000
+            elif self.resolution == 160:
+                r = 0b01010000
+            elif self.resolution == 80:
+                r = 0b01100100
+            elif self.resolution == 40:
+                r = 0b01101001
+            else:
+                r = -self.resolution
+            data.append((0x00,0x2e,r))
         if self.exposure is not None:
             e = (31200 * self.exposure + 500) // 1000
             data.append((0x01,0x30,e & 0xFF))
@@ -109,7 +129,7 @@ class IRRegisters:
         if self.updateTime is not None:
             data.append((0x00,0x04,self.updateTime))
         elif self.resolution is not None:
-            data.append((0x00,0x04,0x02d if self.resolution == 0x69 else 0x32))
+            data.append((0x00,0x04,0x02d if self.resolution == 40 else 0x32))
         if self.pointingThreshold is not None:
             data.append((0x01,0x21,self.pointingThreshold))
         while len(data):
