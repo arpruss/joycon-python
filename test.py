@@ -3,7 +3,7 @@ from pyjoycon import JoyCon,get_R_id,IRRegisters
 
 joycon_id = get_R_id()
 r = IRRegisters()
-mode = JoyCon.IR_POINTING
+mode = JoyCon.IR_IMAGE
 r.defaults(mode)
 r.pointingThreshold = 0
 joycon = JoyCon(*joycon_id, ir_mode=mode, ir_registers=r)#JoyCon.IR_POINTING
@@ -16,7 +16,7 @@ def update(j):
     count += 1
     if count % 30 == 0:
         print(count/(time()-start))
-        print(j.get_status())
+        #print(j.get_status())
         #r.read(joycon)
         #print(r)
     

@@ -40,7 +40,7 @@ class IRRegisters:
             self.interpolationThreshold=68
             self.updateTime=50
             self.pointingThreshold=0
-        elif mode == joycon.JoyCon.IR_IMAGE:
+        elif mode == joycon.JoyCon.IR_POINTING:
             self.resolution=320
             self.exposure=200
             self.maxExposure=0
@@ -57,7 +57,21 @@ class IRRegisters:
             self.updateTime=50
             self.pointingThreshold=1
         elif mode == joycon.JoyCon.IR_IMAGE:
-            pass # TODO
+            self.resolution=320
+            self.exposure=200
+            self.maxExposure=0
+            self.leds=0 # IRRegisters.LED_FLASHLIGHT
+            self.digitalGain=16
+            self.externalLightFilter=0
+            self.brightnessThreshold=200
+            self.leds12Intensity=13
+            self.leds34Intensity=13
+            self.flip=0
+            self.denoise=0
+            self.smoothingThreshold=35
+            self.interpolationThreshold=68
+            #self.updateTime=50
+            self.pointingThreshold=1
     
     def read(self, j):
         page0 = j._get_mcu_registers(0x00)

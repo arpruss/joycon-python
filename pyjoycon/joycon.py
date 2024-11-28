@@ -68,8 +68,8 @@ class JoyCon:
     def _show(self, data, direction):
         print(direction + (' '.join(('%02x'%datum for datum in data))))
        
-    def _request_ir_report(self,ignore=False):
-        self._write_output_report(b'\x11', b'\x03', b'\x00'+(b'\x00'*36)+b'\xFF', crcLocation=47, crcStart=11, crcLength=36, confirm=((0,0x31),) if ignore else None)            
+    def _request_ir_report(self,fragmentAcknowledge=0,ignore=False):
+        self._write_output_report(b'\x11', b'\x03', b'\x00\x00\x00'+bytes((fragmentAcknowledge,))+(b'\x00'*33)+b'\xFF', crcLocation=47, crcStart=11, crcLength=36, confirm=((0,0x31),) if ignore else None)            
         
     def _disable_ir_mode(self):
         self._write_output_report(b'\x01', b'\x21', b'\x23\x01\x02', crcLocation=48, crcStart=12, crcLength=36)
@@ -93,7 +93,7 @@ class JoyCon:
                 self._ir_fragments = 0x3f
             elif self.ir_resolution == 80:
                 self._ir_fragments = 0x0f
-            elif self._ir_resolution == 40:
+            elif self.ir_resolution == 40:
                 self._ir_fragments = 0x03
         
         # init mcu
@@ -111,15 +111,18 @@ class JoyCon:
         if self.ir_registers is not None:
             self.ir_registers.write(self)
 
-        for retries in range(500):
-            self._request_ir_report()
-            report = self._read_input_report()
-            if self._have_ir_data(report):
-                break
-        else:
-            raise IOError("No IR data received")
+#        for retries in range(500):
+#            self._request_ir_report()
+#            report = self._read_input_report()
+#            if self._have_ir_data(report):
+#                break
+#        else:
+#            raise IOError("No IR data received")
 
-        self._request_ir_report()
+        self._ir_fragment = 0
+        self._ir_data = []
+        self._ir_last_image = None
+        self._request_ir_report(fragmentAcknowledge=self._ir_fragment)
         return True
         
     def _get_mcu_registers(self,page):
@@ -164,7 +167,6 @@ class JoyCon:
 
     def _read_input_report(self) -> bytes:
         out = bytes(self._joycon_device.read(self._INPUT_REPORT_SIZE))
-        #self.show(out, '<  ')
         return out
         
     crc8_table = [
@@ -204,8 +206,6 @@ class JoyCon:
                 argument,
             ])
             if crcLocation is not None:
-#                if len(data) > crcLocation:
-#                    data = data[:crcLocation]
                 if len(data) < crcLocation:
                     data += bytes((0,)) * (crcLocation - len(data))
                 data = data[:crcLocation] + self._crc8(data, crcStart, crcLength).to_bytes(1) + data[crcLocation+1:]
@@ -278,7 +278,28 @@ class JoyCon:
                 
             self._input_report = report
             if report[0] == 0x31 and self.ir_mode is not None:
-                self._request_ir_report()
+                if self._ir_fragments > 1:
+                    if report[49] == 0x03:
+                        f = report[52]
+                        if f == (self._ir_fragment + 1) % (self._ir_fragments + 1):
+                            self._ir_fragment = f
+                            self._request_ir_report(f) #f if f <= self._ir_fragments else 0)
+                            self._ir_data += report[59:59+300]
+                            if f == self._ir_fragments:
+                                l = len(self._ir_data)
+                                n = self.ir_resolution * self.ir_resolution * 3 // 4
+                                if n < l:
+                                    self._ir_last_image = self._ir_data[:n]
+                                elif n == l:
+                                    self._ir_last_image = self._ir_data
+                                else:
+                                    self._ir_last_image = self._ir_data + [0,]*(n - l)
+                                self._ir_data = []
+                            else:
+                                self._ir_last_image = None
+                    self._request_ir_report(self._ir_fragment) # TODO: handle missing
+                else:
+                    self._request_ir_report()
                 
             for callback in self._input_hooks:
                 callback(self)
@@ -531,17 +552,23 @@ class JoyCon:
     def _have_ir_data(self, report):
         return self.ir_mode is not None and report[0] == 0x31 and report[49] == 0x03 and report[51] == self.ir_mode
         
+    def get_ir_image(self):
+        return self._ir_last_image
+
     def get_ir_clusters(self):
-        clusters = []
-        if self._have_ir_data(self._input_report):
-            i = 61
-            while i + 16 <= 59+300:
-                if self.ir_mode == JoyCon.IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
-                    i += 1
-                if self._input_report[i] != 0 or self._input_report[i+1] !=0:
-                    clusters.append(self.get_ir_cluster(self._input_report[i:i+16]))
-                i += 16
-        return clusters
+        if self.ir_mode == JoyCon.IR_POINTING or self.ir_mode == JoyCon.IR_CLUSTERING:
+            clusters = []
+            if self._have_ir_data(self._input_report):
+                i = 61
+                while i + 16 <= 59+300:
+                    if self.ir_mode == JoyCon.IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
+                        i += 1
+                    if self._input_report[i] != 0 or self._input_report[i+1] !=0:
+                        clusters.append(self.get_ir_cluster(self._input_report[i:i+16]))
+                    i += 16
+            return clusters
+        else:
+            return None
 
     def get_status(self) -> dict:
         out = {
@@ -602,7 +629,10 @@ class JoyCon:
             }
         }
         if self.ir_mode is not None:
-            out["ir_clusters"] = self.get_ir_clusters()
+            if self.ir_mode == JoyCon.IR_CLUSTERING or self.ir_mode == JoyCon.IR_POINTING:
+                out["ir_clusters"] = self.get_ir_clusters()
+            if self._ir_last_image:
+                out["ir_image"] = self._ir_last_image
         return out
 
     def set_player_lamp_on(self, on_pattern: int):
