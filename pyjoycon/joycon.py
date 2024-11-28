@@ -6,6 +6,7 @@ import time
 import threading
 import struct
 from typing import Optional
+from collections import namedtuple
 
 # TODO: disconnect, power off sequence
 
@@ -506,9 +507,9 @@ class JoyCon:
         return (data - self._GYRO_OFFSET_Z) * self._GYRO_COEFF_Z
         
     def get_ir_cluster(self, data):
-        brightness,pixels,cm_x_64,cm_y_64,x_start,x_end,y_start,y_end = struct.unpack("<HHHHHHHH", data)
-        return { "brightness": brightness, "pixels": pixels, "cm_x_64": cm_x_64, "cm_y_64": cm_y_64, "x_start": x_start,
-            "x_end": x_end, "y_start": y_start, "y_end": y_end }
+        brightness,pixels,cm_y_64,cm_x_64,y_start,y_end,x_start,x_end = struct.unpack("<HHHHHHHH", data)
+        return namedtuple("ir_cluster", ["brightness", "pixels", "cm", "start", "end"])(
+            brightness, pixels, (cm_x_64/64.,cm_y_64/64.), (x_start,y_start), (x_end,y_end));
         
     def _have_ir_data(self, report):
         return self.ir_mode is not None and report[0] == 0x31 and report[49] == 0x03 and report[51] == self.ir_mode

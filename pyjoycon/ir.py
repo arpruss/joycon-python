@@ -32,7 +32,7 @@ class IRRegisters:
             self.brightnessThreshold=200
             self.leds12Intensity=13
             self.leds34Intensity=13
-            self.flip=0
+            self.flip=2
             self.denoise=1
             self.smoothingThreshold=35
             self.interpolationThreshold=68
@@ -48,7 +48,7 @@ class IRRegisters:
             self.brightnessThreshold=200
             self.leds12Intensity=13
             self.leds34Intensity=13
-            self.flip=0
+            self.flip=2
             self.denoise=0
             self.smoothingThreshold=35
             self.interpolationThreshold=68
