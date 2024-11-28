@@ -5,7 +5,7 @@ joycon_id = get_R_id()
 r = IRRegisters()
 r.defaults(mode=JoyCon.IR_POINTING)
 r.pointingThreshold = 0
-joycon = JoyCon(*joycon_id, ir_mode=JoyCon.IR_POINTING, ir_registers=r)
+joycon = JoyCon(*joycon_id, ir_mode=None, ir_registers=r)#JoyCon.IR_POINTING
 
 start = time()
 count = 0
@@ -15,7 +15,7 @@ def update(j):
     count += 1
     if count % 30 == 0:
         print(count/(time()-start))
-        print(j.get_ir_clusters())
+        print(j.get_status())
         #r.read(joycon)
         #print(r)
     

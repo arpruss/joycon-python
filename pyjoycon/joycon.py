@@ -72,38 +72,26 @@ class JoyCon:
     def _disable_ir_mode(self):
         self._write_output_report(b'\x01', b'\x21', b'\x23\x01\x02', crcLocation=48, crcStart=12, crcLength=36)
         
+    def _set_report_type(self, reportType):
+        self._report_type = reportType
+        self._write_output_report(b'\x01', b'\x03', bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3)))
+        
     def _send_ir_mode(self, retries=16):
-        reportType = 0x31
-        # set report type
-        if not self._write_output_report(b'\x01', b'\x03', bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3))): # TODO: report type?
-            print("set report type failed")
-            return False
+        _set_report_type(0x31)
         # init mcu
-        if not self._write_output_report(b'\x01', b'\x22', b'\x01', confirm=((0xD,0x80),(0xE,0x22))):
-            print("init mcu failed")
-            return False
+        self._write_output_report(b'\x01', b'\x22', b'\x01', confirm=((0xD,0x80),(0xE,0x22)))
         # get status
-        if not self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x01))):
-            print("get status failed")
-            return False
-#        time.sleep(0.01)
-#        self._disable_ir_mode()
-#        time.sleep(0.01)
-        if not self._write_output_report(b'\x01', b'\x21', b'\x01\x00\x05', crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21), (15,0x01), (22, 0x01))):
-            print("set mcu mode failed")
-            return False
-        if not self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x05))):
-            print("get status failed")
-            return False
-            
+        self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x01)))
+        # set mcu mode
+        self._write_output_report(b'\x01', b'\x21', b'\x01\x00\x05', crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21), (15,0x01), (22, 0x01)))
+        # get status
+        self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x05)))
+        # set ir mode
         args = struct.pack('<BBBBHH', 0x23, 0x01, self.ir_mode, 1, 0x0500, 0x1800)
-        if not self._write_output_report(b'\x01', b'\x21', args, crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21),(15,0x0b))):
-            print("set ir mode failed")
-            return False
+        self._write_output_report(b'\x01', b'\x21', args, crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21),(15,0x0b)))
 
-        self.ir_registers.write(self)
-        #self._set_mcu_registers(registers1)
-        #self._set_mcu_registers(registers2)
+        if self.ir_registers is not None:
+            self.ir_registers.write(self)
 
         for retries in range(500):
             self._request_ir_report()
@@ -111,10 +99,9 @@ class JoyCon:
             if self._have_ir_data(report):
                 break
         else:
-            print("no ir data")
+            raise IOError("No IR data received")
 
         self._request_ir_report()
-        
         return True
         
     def _get_mcu_registers(self,page):
@@ -122,15 +109,14 @@ class JoyCon:
         report = self._write_output_report(b'\x11',b'\x03',cmd,crcLocation=47,crcStart=11,crcLength=36,
                     confirm=((49,0x1b),(51,page),(52,0x00)))
         if not report:
-            print("fail")
-            return None
+            raise IOError("Cannot read MCU registers")
         else:
             return tuple(report[54+i] for i in range(report[52]+report[53]))
 
     def _set_mcu_registers(self, registers):
         count = len(registers)
         if count > 9:
-            return False
+            raise ValueError("Too many registers")
         cmd = bytes((0x23,0x04,count,))
         for page,reg,value in registers:
             cmd += bytes((page,reg,value))
@@ -211,8 +197,6 @@ class JoyCon:
             elif len(data)<49:
                 data += bytes((0,))*(49-len(data))
             
-            #self.show(data, '>  ')
-
             self._joycon_device.write(data)
             self._packet_number = (self._packet_number + 1) & 0xF
             
@@ -237,7 +221,7 @@ class JoyCon:
                     r2 -= 1
                 
             r -= 1
-        return None
+        raise IOError("Cannot confirm subcommand %02x" % subcommand[0])
 
     def _send_subcmd_get_response(self, subcommand, argument) -> (bool, bytes):
         # TODO: handle subcmd when daemon is running
@@ -278,8 +262,6 @@ class JoyCon:
             if report[0] == 0x31 and self.ir_mode is not None:
                 self._request_ir_report()
                 
-            #3self.show(report, "<")
-            
             for callback in self._input_hooks:
                 callback(self)
 
@@ -333,7 +315,7 @@ class JoyCon:
         if self.ir_mode is None:
             # Change format of input report
             self._disable_ir_mode()
-            self._write_output_report(b'\x01', b'\x03', b'\x30')
+            self._set_report_type(0x30)
         else: 
             self._send_ir_mode()
             
@@ -544,7 +526,7 @@ class JoyCon:
         return clusters
 
     def get_status(self) -> dict:
-        return {
+        out = {
             "battery": {
                 "charging": self.get_battery_charging(),
                 "level": self.get_battery_level(),
@@ -599,10 +581,11 @@ class JoyCon:
                 "x": self.get_gyro_x(),
                 "y": self.get_gyro_y(),
                 "z": self.get_gyro_z(),
-            },
-            "ir_clusters": 
-                self.get_ir_clusters()
+            }
         }
+        if self.ir_mode is not None:
+            out["ir_clusters"] = self.get_ir_clusters()
+        return out
 
     def set_player_lamp_on(self, on_pattern: int):
         self._write_output_report(
