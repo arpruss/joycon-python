@@ -1,8 +1,11 @@
 from time import sleep,time
-from pyjoycon import Joycon,get_R_id
+from pyjoycon import JoyCon,get_R_id,IRRegisters
 
 joycon_id = get_R_id()
-joycon = pyjoycon.JoyCon(*joycon_id, ir_mode=Joycon.IR_POINTING)
+r = IRRegisters()
+r.defaults(mode=JoyCon.IR_POINTING)
+r.pointingThreshold = 0
+joycon = JoyCon(*joycon_id, ir_mode=JoyCon.IR_POINTING, ir_registers=r)
 
 start = time()
 count = 0
@@ -13,6 +16,8 @@ def update(j):
     if count % 30 == 0:
         print(count/(time()-start))
         print(j.get_ir_clusters())
+        #r.read(joycon)
+        #print(r)
     
 
 joycon.register_update_hook(update)

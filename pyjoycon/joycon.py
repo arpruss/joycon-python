@@ -1,5 +1,6 @@
 from .constants import JOYCON_VENDOR_ID, JOYCON_PRODUCT_IDS
 from .constants import JOYCON_L_PRODUCT_ID, JOYCON_R_PRODUCT_ID
+from .ir import IRRegisters
 import hid
 import time
 import threading
@@ -24,7 +25,7 @@ class JoyCon:
     color_body : (int, int, int)
     color_btn  : (int, int, int)
 
-    def __init__(self, vendor_id: int, product_id: int, serial: str = None, simple_mode=False, ir_mode=None):
+    def __init__(self, vendor_id: int, product_id: int, serial: str = None, simple_mode=False, ir_mode=None, ir_registers=None):
         if vendor_id != JOYCON_VENDOR_ID:
             raise ValueError(f'vendor_id is invalid: {vendor_id!r}')
 
@@ -32,6 +33,7 @@ class JoyCon:
             raise ValueError(f'product_id is invalid: {product_id!r}')
 
         self.ir_mode     = ir_mode
+        self.ir_registers = ir_registers
         self.vendor_id   = vendor_id
         self.product_id  = product_id
         self.serial      = serial
@@ -47,6 +49,12 @@ class JoyCon:
         # connect to joycon
         self._joycon_device = self._open(vendor_id, product_id, serial=None)
         self._read_joycon_data()
+        
+        if self.ir_mode is not None:
+            if self.ir_registers is None:
+                self.ir_registers = IRRegisters()
+                self.ir_registers.defaults(self.ir_mode)
+        
         self._setup_sensors()
 
         # start talking with the joycon in a daemon thread
@@ -65,28 +73,6 @@ class JoyCon:
         self._write_output_report(b'\x01', b'\x21', b'\x23\x01\x02', crcLocation=48, crcStart=12, crcLength=36)
         
     def _send_ir_mode(self, retries=16):
-        # todo: investigate
-        # 0b01 flashlight
-        # 0b10000000 strobe
-        # 0b110000 both off
-        pointingThreshold = 0 # 0-7
-        leds = 0b110000 # 0b110000 #| 0b01 # all off
-        intensity12 = 0x2 # max 0xF
-        intensity34 = 0x3 # max 0x10
-        externalFilter = 0 # or 3
-        enableDenoise = 0
-        maxExposure = 0
-        digitalGain = 0xFF
-        pixelThreshold = 50
-        exposureTime_microseconds = 600
-        exposureTimeValue = 31200 * exposureTime_microseconds // 1000
-        if exposureTimeValue >= 0xFFFF:
-            exposureTimeValue = 0xFFFF
-        
-        registers1 = ((0x01,0x32,maxExposure),(0x01,0x2e,(digitalGain & 0xF)<<4), (0x01,0x2f,(digitalGain & 0xF0)>>4), 
-                      (0x01,0x43,pixelThreshold), (0x01, 0x30, exposureTimeValue & 0xFF ), 
-                      (0x01, 0x31, exposureTimeValue >> 8 ), (0x01,0x67,enableDenoise))
-        registers2 = ((0x01,0x21,pointingThreshold),(0x00,0x10,leds),(0x00,0x11,intensity12),(0x00,0x12,intensity34),(0x00,0x0e,externalFilter),(0x00,0x2e,0b00000000),(0x00,0x04,0x32),(0x01,0x43,200),(0,7,1))
         reportType = 0x31
         # set report type
         if not self._write_output_report(b'\x01', b'\x03', bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3))): # TODO: report type?
@@ -115,9 +101,9 @@ class JoyCon:
             print("set ir mode failed")
             return False
 
-        self._set_mcu_registers(registers1)
-        self._set_mcu_registers(registers2)
-        self._request_ir_report()
+        self.ir_registers.write(self)
+        #self._set_mcu_registers(registers1)
+        #self._set_mcu_registers(registers2)
 
         for retries in range(500):
             self._request_ir_report()
@@ -550,7 +536,7 @@ class JoyCon:
         if self._have_ir_data(self._input_report):
             i = 61
             while i + 16 <= 59+300:
-                if self.ir_mode == IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
+                if self.ir_mode == JoyCon.IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
                     i += 1
                 if self._input_report[i] != 0 or self._input_report[i+1] !=0:
                     clusters.append(self.get_ir_cluster(self._input_report[i:i+16]))
