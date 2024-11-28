@@ -14,9 +14,11 @@ class IRRegisters:
                         'pointingThreshold')
     
     def __init__(self, **kwargs):
-        for arg in kwargs:
-            if arg in IRRegisters.fields:
+        for arg in IRRegisters.fields:
+            if arg in kwargs:
                 setattr(self,arg,kwargs[arg])
+            else:
+                setattr(self,arg,None)
                 
     def __repr__(self):
         return ", ".join(f+"="+repr(getattr(self,f)) for f in IRRegisters.fields)
@@ -38,7 +40,7 @@ class IRRegisters:
             self.interpolationThreshold=68
             self.updateTime=50
             self.pointingThreshold=0
-        else:
+        elif mode == joycon.JoyCon.IR_IMAGE:
             self.resolution=320
             self.exposure=200
             self.maxExposure=0
@@ -54,6 +56,8 @@ class IRRegisters:
             self.interpolationThreshold=68
             self.updateTime=50
             self.pointingThreshold=1
+        elif mode == joycon.JoyCon.IR_IMAGE:
+            pass # TODO
     
     def read(self, j):
         page0 = j._get_mcu_registers(0x00)

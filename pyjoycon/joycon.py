@@ -15,6 +15,7 @@ class JoyCon:
     _INPUT_REPORT_PERIOD = 0.015
     IR_POINTING   = 4
     IR_CLUSTERING = 6
+    IR_IMAGE      = 7
     
     _RUMBLE_DATA = b'\x00\x01\x40\x40\x00\x01\x40\x40'
     #_RUMBLE_DATA = b'\x00\x00\x00\x00\x00\x00\x00\x00'
@@ -77,8 +78,24 @@ class JoyCon:
         self._report_type = reportType
         self._write_output_report(b'\x01', b'\x03', bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3)))
         
-    def _send_ir_mode(self, retries=16):
+    def _enable_ir_mode(self, retries=16):
         self._set_report_type(0x31)
+        if self.ir_registers is None or self.ir_registers.resolution is None or self.ir_registers.resolution <= 0:
+            # TODO: handle more complex binning/skipping
+            self.ir_resolution = 320
+        else:
+            self.ir_resolution = self.ir_registers.resolution
+        self._ir_fragments = 1
+        if self.ir_mode == JoyCon.IR_IMAGE:
+            if self.ir_resolution == 320:
+                self._ir_fragments = 0xFF
+            elif self.ir_resolution == 160:
+                self._ir_fragments = 0x3f
+            elif self.ir_resolution == 80:
+                self._ir_fragments = 0x0f
+            elif self._ir_resolution == 40:
+                self._ir_fragments = 0x03
+        
         # init mcu
         self._write_output_report(b'\x01', b'\x22', b'\x01', confirm=((0xD,0x80),(0xE,0x22)))
         # get status
@@ -88,7 +105,7 @@ class JoyCon:
         # get status
         self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,self._report_type),(49,0x01),(56,0x05)))
         # set ir mode
-        args = struct.pack('<BBBBHH', 0x23, 0x01, self.ir_mode, 1, 0x0500, 0x1800)
+        args = struct.pack('<BBBBHH', 0x23, 0x01, self.ir_mode, self._ir_fragments, 0x0500, 0x1800)
         self._write_output_report(b'\x01', b'\x21', args, crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21),(15,0x0b)))
 
         if self.ir_registers is not None:
@@ -318,7 +335,7 @@ class JoyCon:
             self._disable_ir_mode()
             self._set_report_type(0x30)
         else: 
-            self._send_ir_mode()
+            self._enable_ir_mode()
             
         time.sleep(0.02)
 
