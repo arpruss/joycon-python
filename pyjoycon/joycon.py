@@ -77,15 +77,15 @@ class JoyCon:
         self._write_output_report(b'\x01', b'\x03', bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3)))
         
     def _send_ir_mode(self, retries=16):
-        _set_report_type(0x31)
+        self._set_report_type(0x31)
         # init mcu
         self._write_output_report(b'\x01', b'\x22', b'\x01', confirm=((0xD,0x80),(0xE,0x22)))
         # get status
-        self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x01)))
+        self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,self._report_type),(49,0x01),(56,0x01)))
         # set mcu mode
         self._write_output_report(b'\x01', b'\x21', b'\x01\x00\x05', crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21), (15,0x01), (22, 0x01)))
         # get status
-        self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,reportType),(49,0x01),(56,0x05)))
+        self._write_output_report(b'\x11', b'\x01', b'', confirm=((0,self._report_type),(49,0x01),(56,0x05)))
         # set ir mode
         args = struct.pack('<BBBBHH', 0x23, 0x01, self.ir_mode, 1, 0x0500, 0x1800)
         self._write_output_report(b'\x01', b'\x21', args, crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21),(15,0x0b)))

@@ -3,9 +3,10 @@ from pyjoycon import JoyCon,get_R_id,IRRegisters
 
 joycon_id = get_R_id()
 r = IRRegisters()
-r.defaults(mode=JoyCon.IR_POINTING)
+mode = JoyCon.IR_POINTING
+r.defaults(mode)
 r.pointingThreshold = 0
-joycon = JoyCon(*joycon_id, ir_mode=None, ir_registers=r)#JoyCon.IR_POINTING
+joycon = JoyCon(*joycon_id, ir_mode=mode, ir_registers=r)#JoyCon.IR_POINTING
 
 start = time()
 count = 0
