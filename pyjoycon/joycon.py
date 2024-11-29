@@ -17,6 +17,8 @@ class JoyCon:
     IR_CLUSTERING = 6
     IR_IMAGE      = 7
     
+    _IR_FRAGMENT_SIZE = 300
+    
     _RUMBLE_DATA = b'\x00\x01\x40\x40\x00\x01\x40\x40'
     #_RUMBLE_DATA = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
@@ -110,19 +112,27 @@ class JoyCon:
 
         if self.ir_registers is not None:
             self.ir_registers.write(self)
+            
+        for retries in range(500):
+            self._request_ir_report()
+            report = self._read_input_report()
+            if self._have_ir_data(report):
+                break
+        else:
+            raise IOError("No IR data received")
 
-#        for retries in range(500):
-#            self._request_ir_report()
-#            report = self._read_input_report()
-#            if self._have_ir_data(report):
-#                break
-#        else:
-#            raise IOError("No IR data received")
+        if self.ir_registers is not None:
+            self.ir_registers.write(self)
 
-        self._ir_fragment = 0
-        self._ir_data = []
-        self._ir_last_image = None
-        self._request_ir_report(fragmentAcknowledge=self._ir_fragment)
+        if self.ir_mode == JoyCon.IR_IMAGE:
+            if self.ir_registers is not None:
+                self.ir_registers.write(self)
+            self._ir_fragment = 0
+            self._ir_data = [0,] * (self._ir_fragments * JoyCon._IR_FRAGMENT_SIZE)
+            self._ir_last_image = None
+            self._ir_last_fragment = 0
+            
+        self._request_ir_report(fragmentAcknowledge=0)
         return True
         
     def _get_mcu_registers(self,page):
@@ -144,7 +154,7 @@ class JoyCon:
         if count < 9:
             cmd += bytes((0,0,0)) * (9-count)
         self._write_output_report(b'\x01', b'\x21', cmd, crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21),(14,0x21)))
-        time.sleep(0.015)
+        #time.sleep(0.015)
         return True
 
     def _open(self, vendor_id, product_id, serial):
@@ -281,6 +291,22 @@ class JoyCon:
                 if self._ir_fragments > 1:
                     if report[49] == 0x03:
                         f = report[52]
+                        #print(f,self._ir_fragment,self._ir_fragments)
+                        offset = f * JoyCon._IR_FRAGMENT_SIZE
+                        self._ir_data[offset:offset+JoyCon._IR_FRAGMENT_SIZE] = report[59:59+300]
+                        if f == self._ir_fragments:
+                            if f == self._ir_last_fragment:
+                                self._request_ir_report(0)
+                                self._ir_last_image = None
+                            else:
+                                self._request_ir_report(f)
+                                self._ir_last_image = self._ir_data
+                                self._ir_data = [0,]*(self._ir_fragments * JoyCon._IR_FRAGMENT_SIZE)
+                        else:
+                            self._request_ir_report(f)
+                            self._ir_last_image = None
+                        self._ir_last_fragment = f
+                        """
                         if f == (self._ir_fragment + 1) % (self._ir_fragments + 1):
                             self._ir_fragment = f
                             self._request_ir_report(f) #f if f <= self._ir_fragments else 0)
@@ -296,8 +322,9 @@ class JoyCon:
                                     self._ir_last_image = self._ir_data + [0,]*(n - l)
                                 self._ir_data = []
                             else:
-                                self._ir_last_image = None
-                    self._request_ir_report(self._ir_fragment) # TODO: handle missing
+                                self._ir_last_image = None"""
+                    else:
+                        self._request_ir_report(self._ir_fragment) # TODO: handle missing
                 else:
                     self._request_ir_report()
                 

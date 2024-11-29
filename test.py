@@ -16,7 +16,7 @@ def update(j):
     count += 1
     if count % 30 == 0:
         print(count/(time()-start))
-        #print(j.get_status())
+        print(j.get_status())
         #r.read(joycon)
         #print(r)
     

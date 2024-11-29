@@ -8,7 +8,10 @@ mode = JoyCon.IR_IMAGE
 joycon_id = get_R_id()
 r = IRRegisters()
 r.defaults(mode)
-r.resolution = 160
+r.leds = 1#Registers.LED_12_OFF | IRRegisters.LED_34_OFF #IRRegisters.LED_12_OFF | IRRegisters.LED_34_OFF
+r.leds12Intensity = 0xE
+r.leds34Intensity = 0xE
+r.resolution = 320
 
 width = r.resolution * 3 // 4
 height = r.resolution
@@ -28,6 +31,7 @@ def update(j):
     image = j.get_ir_image()
     clusters = j.get_ir_clusters()
     if image is not None:
+        print("image")
         screen.fill((0,0,0))
         for y in range(height):
             for x in range(width):
@@ -37,10 +41,10 @@ def update(j):
                     screen.set_at((x,y),(c,c,c))
         pygame.display.flip()
     elif clusters is not None:
-        print("clusters")
+        #print("clusters")
         screen.fill((0,0,0))
         for cluster in clusters:
-            b = cluster.brightness * 255 // 65535
+            b = cluster.brightness * 220 // 65535 + 25
             r = cluster.start[0],cluster.start[1],cluster.end[0]-cluster.start[0]+1,cluster.end[1]-cluster.start[1]+1
             pygame.draw.rect(screen, (b,b,b), pygame.Rect(*r))
             screen.set_at((int(cluster.cm[0]+0.5),int(cluster.cm[1]+0.5)),(255,0,0))

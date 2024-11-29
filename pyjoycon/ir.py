@@ -1,7 +1,7 @@
 from . import joycon
 
-# exposure - 0-600 microseconds                         
-# pointingThreshold 0-7
+# exposure: 0-600 microseconds                         
+# pointingThreshold: 0-7
 
 class IRRegisters:
     LED_FLASHLIGHT = 0b01
